@@ -32,6 +32,20 @@ class Identity(nn.Module):
         return x
 
 
+def _resolve_mlp_class(mlp):
+    """Return a concrete nn.Module subclass given a user-provided identifier."""
+    if isinstance(mlp, str):
+        key = mlp.lower()
+        if key == 'mlp':
+            return MLP
+        if key == 'transformer':
+            from utils.transformer_mlp import TransformerMLP
+
+            return TransformerMLP
+        raise ValueError(f'Unknown mlp_class "{mlp}". Expected "MLP" or "Transformer".')
+    return mlp
+
+
 class MLP(nn.Module):
     """Multi-layer perceptron (MLP).
 
@@ -214,7 +228,8 @@ class GCActor(nn.Module):
     gc_encoder: nn.Module = None
 
     def setup(self):
-        self.actor_net = self.mlp_class(self.hidden_dims, activate_final=True, layer_norm=self.layer_norm)
+        mlp_cls = _resolve_mlp_class(self.mlp_class)
+        self.actor_net = mlp_cls(self.hidden_dims, activate_final=True, layer_norm=self.layer_norm)
         self.mean_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
         if self.state_dependent_std:
             self.log_std_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
@@ -284,7 +299,8 @@ class GCDiscreteActor(nn.Module):
     gc_encoder: nn.Module = None
 
     def setup(self):
-        self.actor_net = self.mlp_class(self.hidden_dims, activate_final=True, layer_norm=self.layer_norm)
+        mlp_cls = _resolve_mlp_class(self.mlp_class)
+        self.actor_net = mlp_cls(self.hidden_dims, activate_final=True, layer_norm=self.layer_norm)
         self.logit_net = nn.Dense(self.action_dim, kernel_init=default_init(self.final_fc_init_scale))
 
     def __call__(
@@ -340,7 +356,7 @@ class GCValue(nn.Module):
     gc_encoder: nn.Module = None
 
     def setup(self):
-        mlp_class = self.mlp_class
+        mlp_class = _resolve_mlp_class(self.mlp_class)
         if self.num_ensembles > 1:
             mlp_class = ensemblize(mlp_class, self.num_ensembles)
         output_dim = self.output_dim if self.output_dim is not None else 1
@@ -413,7 +429,7 @@ class GCBilinearValue(nn.Module):
     goal_encoder: nn.Module = None
 
     def setup(self) -> None:
-        mlp_class = self.mlp_class
+        mlp_class = _resolve_mlp_class(self.mlp_class)
         if self.num_ensembles > 1:
             mlp_class = ensemblize(mlp_class, self.num_ensembles)
 
@@ -601,7 +617,8 @@ class ActorVectorField(nn.Module):
     gc_encoder: nn.Module = None
 
     def setup(self) -> None:
-        self.mlp = self.mlp_class(
+        mlp_cls = _resolve_mlp_class(self.mlp_class)
+        self.mlp = mlp_cls(
             (*self.hidden_dims, self.action_dim), activate_final=False, layer_norm=self.layer_norm
         )
 

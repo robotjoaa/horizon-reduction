@@ -135,12 +135,13 @@ def main(_):
 
     logdir = Path(f"log/{config['agent_name']}")
     os.makedirs(logdir, exist_ok=True)
-
+    start_trace(str(logdir))
     for i in tqdm.tqdm(range(1, FLAGS.offline_steps + 1), smoothing=0.1, dynamic_ncols=True):
         batch = train_dataset.sample(config['batch_size'])
         # print(batch['observations'].shape, batch['actor_goals'].shape) # 69, 2 for humanmaze
         agent, update_info = agent.update(batch)
-
+        if i == 1 :
+            stop_trace()
         # Log metrics.
         if i % FLAGS.log_interval == 0:
             train_metrics = {f'training/{k}': v for k, v in update_info.items()}
@@ -206,7 +207,7 @@ def main(_):
             )
             train_dataset = dataset_class(Dataset.create(**train_dataset), config)
             val_dataset = dataset_class(Dataset.create(**val_dataset), config)
-
+    stop_trace()
     train_logger.close()
     eval_logger.close()
 
