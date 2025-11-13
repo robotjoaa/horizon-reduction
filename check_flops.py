@@ -5,7 +5,7 @@ import os
 import random
 import time
 from collections import defaultdict
-
+from functools import partial
 import numpy as np
 import tqdm
 import wandb
@@ -22,7 +22,8 @@ from utils.log_utils import CsvLogger, get_exp_name, get_flag_dict, get_wandb_vi
 from agents import agents, gcsacbc
 import ogbench 
 import jax
-
+from utils.transformer_mlp import TransformerMLP
+from utils import mlp_class
 if __name__ == "__main__" : 
     #random.seed(FLAGS.seed)
     #np.random.seed(FLAGS.seed)
@@ -59,21 +60,29 @@ if __name__ == "__main__" :
     input_shape = (batch_size, obs_size + goal_size)
     agent_class = agents[config['agent_name']]
     # from utils.networks import MLP
-    from utils.transformer_mlp import TransformerMLP
-    variant = 'small'
-    if config['mlp_class'] == 'Transformer' : 
-        if variant == 'small' : 
-            config['actor_hidden_dims']=(2048, 16, 128, 4, 128)  # Actor network hidden dimensions. (small)
-            config['value_hidden_dims']= (2048, 16, 128, 4, 128)  # Value network hidden dimensions. (small)
-        elif variant == 'large' : 
-            config['actor_hidden_dims']=(2048, 8, 256, 10, 1024) # Actor network hidden dimensions. (large)
-            config['value_hidden_dims']=(2048, 8, 256, 10, 1024) # Value network hidden dimensions. (large)
 
+    str_mlp_class = 'Transformer'
+    variant = 'large'
+    agent_mlp = mlp_class[str_mlp_class]
+    if str_mlp_class == 'Transformer':
+        agent_mlp = partial(agent_mlp, transformer_variant=variant)
+
+    if str_mlp_class == 'Transformer' : 
+        config['batch_size'] = 1 # 1024 -> 256
+        if variant == 'small' : 
+            config['actor_hidden_dims'] = (2048, 16, 128, 4, 128)
+            config['value_hidden_dims'] = (2048, 16, 128, 4, 128)
+        elif variant == 'large' : 
+            config['actor_hidden_dims'] = (2048, 8, 256, 10, 1024)
+            config['value_hidden_dims'] = (2048, 8, 256, 10, 1024)
+
+    config['batch_size'] = 1
     agent = agent_class.create(
-            seed,
-            example_batch,
-            config,
-        )
+        seed,
+        example_batch,
+        config,
+        agent_mlp,
+    )
 
     #print(agent.network)
 

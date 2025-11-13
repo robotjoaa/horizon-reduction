@@ -94,23 +94,24 @@ class TransformerMLP(nn.Module):
             raise ValueError(f'Unknown transformer_variant "{self.transformer_variant}".')
         return TRANSFORMER_SPECS[self.transformer_variant]
 
+    def _extract_spec_and_tail(self):
+        """Return (TransformerSpec, remaining hidden dims after the spec tuple)."""
+        dims = tuple(self.hidden_dims)
+        if self.transformer_spec is not None:
+            return self.transformer_spec, dims
+        if len(dims) >= 5:
+            candidate = dims[:5]
+            try:
+                spec = TransformerSpec(*candidate)
+            except (TypeError, ValueError):
+                spec = None
+            else:
+                return spec, dims[5:]
+        return self._resolve_spec(), dims
+
     @nn.compact
     def __call__(self, x, *, deterministic: bool = True):
-        if not self.hidden_dims:
-            raise ValueError('TransformerMLP expects at least one entry in hidden_dims (the output size).')
-        else :
-            spec = TransformerSpec(
-                    proj_dim = self.hidden_dims[0],
-                    sequence_length = self.hidden_dims[1],
-                    token_dim = self.hidden_dims[2],
-                    num_layers = self.hidden_dims[3],
-                    mlp_dim = self.hidden_dims[4],
-                )
-            #print(self.hidden_dims)
-            #assert len(self.hidden_dims) == 6 # proj_dim, sequence_length, token_dim, num_layers, mlp_dim, last_dense
-            #proj_dim, sequence_length, token_dim, num_layers, mlp_dim = self.hidden_dims
-            # spec = self._resolve_spec()
-            
+        spec, mlp_hidden_dims = self._extract_spec_and_tail()
 
         # Project inputs to Tr and reshape into (Tℓ, Tk).
         y = nn.Dense(spec.proj_dim, kernel_init=self.kernel_init)(x)
@@ -132,16 +133,20 @@ class TransformerMLP(nn.Module):
         # Concatenate token embeddings for downstream dense layers.
         y = nn.LayerNorm()(y)
         features = jnp.reshape(y, (*y.shape[:-2], spec.proj_dim))
-        #print(features.shape)
 
-        self.sow('intermediates', 'feature', features) # used for ensemble
-        
-        if len(self.hidden_dims) == 6 : # 5 default, but GCValue adds 1 at the end
-            outputs = nn.Dense(self.hidden_dims[-1], kernel_init=self.kernel_init)(features)
-        else : 
-            outputs = features
+        outputs = features
+        num_layers = len(mlp_hidden_dims)
+        for i, size in enumerate(mlp_hidden_dims):
+            outputs = nn.Dense(size, kernel_init=self.kernel_init)(outputs)
+            apply_activation = i + 1 < num_layers or self.activate_final
+            if apply_activation:
+                outputs = self.activations(outputs)
+                if self.layer_norm:
+                    outputs = nn.LayerNorm()(outputs)
+            if num_layers >= 2 and i == num_layers - 2:
+                self.sow('intermediates', 'feature', outputs)
 
-        if self.activate_final:
+        if num_layers == 0 and self.activate_final:
             outputs = self.activations(outputs)
             if self.layer_norm:
                 outputs = nn.LayerNorm()(outputs)
