@@ -4,8 +4,6 @@ import os
 import random
 import time
 from collections import defaultdict
-from functools import partial
-
 
 def _append_xla_flag(flag: str) -> None:
     """Safely append an XLA flag before importing JAX."""
@@ -107,8 +105,6 @@ def main(_):
     agent_class = agents[config['agent_name']]
 
     agent_mlp = mlp_class[FLAGS.mlp_class]
-    if FLAGS.mlp_class == 'Transformer':
-        agent_mlp = partial(agent_mlp, transformer_variant=FLAGS.tx_variant)
 
     if FLAGS.mlp_class == 'Transformer' : 
         config['batch_size'] = 1 # 1024 -> 256

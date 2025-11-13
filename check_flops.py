@@ -5,7 +5,6 @@ import os
 import random
 import time
 from collections import defaultdict
-from functools import partial
 import numpy as np
 import tqdm
 import wandb
@@ -17,6 +16,21 @@ from utils.datasets import Dataset, GCDataset, HGCDataset
 from utils.evaluation import evaluate
 from utils.flax_utils import restore_agent, save_agent
 from utils.log_utils import CsvLogger, get_exp_name, get_flag_dict, get_wandb_video, setup_wandb
+
+
+def _append_xla_flag(flag: str) -> None:
+    """Safely append an XLA flag before importing JAX."""
+    current = os.environ.get('XLA_FLAGS', '')
+    if flag not in current.split():
+        os.environ['XLA_FLAGS'] = (current + ' ' + flag).strip()
+
+
+# Disable Triton GEMM fusion to avoid GPU ptxas crashes when compiling large transformers.
+_append_xla_flag('--xla_gpu_enable_triton_gemm=false')
+
+# This script only inspects parameter counts, so run on CPU by default to avoid GPU-specific compiler issues.
+if os.environ.get('CHECK_FLOPS_FORCE_CPU', '1') == '1':
+    os.environ.setdefault('JAX_PLATFORM_NAME', 'cpu')
 
 # from calflops import calculate_flops
 from agents import agents, gcsacbc
@@ -64,8 +78,6 @@ if __name__ == "__main__" :
     str_mlp_class = 'Transformer'
     variant = 'large'
     agent_mlp = mlp_class[str_mlp_class]
-    if str_mlp_class == 'Transformer':
-        agent_mlp = partial(agent_mlp, transformer_variant=variant)
 
     if str_mlp_class == 'Transformer' : 
         config['batch_size'] = 1 # 1024 -> 256
@@ -106,6 +118,3 @@ if __name__ == "__main__" :
     #                                     output_as_string=True,
     #                                     output_precision=4)
     # print("FLOPs:%s   MACs:%s   Params:%s \n" %(flops, macs, params))
-
-
-
