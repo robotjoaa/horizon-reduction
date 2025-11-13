@@ -5,6 +5,17 @@ import random
 import time
 from collections import defaultdict
 
+
+def _append_xla_flag(flag: str) -> None:
+    """Safely append an XLA flag before importing JAX."""
+    current = os.environ.get('XLA_FLAGS', '')
+    if flag not in current.split():
+        os.environ['XLA_FLAGS'] = (current + ' ' + flag).strip()
+
+
+# Disable Triton GEMM fusion to avoid GPU ptxas crashes when compiling large transformers.
+_append_xla_flag('--xla_gpu_enable_triton_gemm=false')
+
 import numpy as np
 import tqdm
 import wandb
@@ -17,6 +28,7 @@ from utils.datasets import Dataset, GCDataset, HGCDataset
 from utils.evaluation import evaluate
 from utils.flax_utils import restore_agent, save_agent
 from utils.log_utils import CsvLogger, get_exp_name, get_flag_dict, get_wandb_video, setup_wandb
+from utils import mlp_class
 
 FLAGS = flags.FLAGS
 
@@ -41,8 +53,18 @@ flags.DEFINE_float('eval_gaussian', None, 'Action Gaussian noise for evaluation.
 flags.DEFINE_integer('video_episodes', 1, 'Number of video episodes for each task.')
 flags.DEFINE_integer('video_frame_skip', 3, 'Frame skip for videos.')
 
+### transformer
+flags.DEFINE_string('mlp_class', 'MLP', 'What MLP class to use for agent') # MLP or TransformerMLP
+flags.DEFINE_string('tx_variant', 'small', 'Transformer variant large or small') # Transformer variant
+
 config_flags.DEFINE_config_file('agent', 'agents/sharsa.py', lock_config=False)
 
+### profiler ###
+import jax
+# import jax.numpy as jnp
+# # from jax import random, jit, grad
+from jax.profiler import start_trace, stop_trace, trace
+from pathlib import Path
 
 def main(_):
     # Set up logger.
@@ -82,10 +104,24 @@ def main(_):
     example_batch = train_dataset.sample(1)
 
     agent_class = agents[config['agent_name']]
+
+    agent_mlp = mlp_class[FLAGS.mlp_class]
+
+    if FLAGS.mlp_class == 'Transformer' : 
+        config['batch_size'] = 1 # 1024 -> 256
+        if FLAGS.tx_variant == 'small' : 
+            config['actor_hidden_dims'] = (2048, 16, 128, 4, 128)
+            config['value_hidden_dims'] = (2048, 16, 128, 4, 128)
+        elif FLAGS.tx_variant == 'large' : 
+            config['actor_hidden_dims'] = (2048, 8, 256, 10, 1024)
+            config['value_hidden_dims'] = (2048, 8, 256, 10, 1024)
+
+    config['batch_size'] = 1
     agent = agent_class.create(
         FLAGS.seed,
         example_batch,
         config,
+        agent_mlp,
     )
 
     # Restore agent.
@@ -98,8 +134,12 @@ def main(_):
     first_time = time.time()
     last_time = time.time()
 
+    logdir = Path(f"log/{config['agent_name']}")
+    os.makedirs(logdir, exist_ok=True)
+
     for i in tqdm.tqdm(range(1, FLAGS.offline_steps + 1), smoothing=0.1, dynamic_ncols=True):
         batch = train_dataset.sample(config['batch_size'])
+        # print(batch['observations'].shape, batch['actor_goals'].shape) # 69, 2 for humanmaze
         agent, update_info = agent.update(batch)
 
         # Log metrics.

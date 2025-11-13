@@ -8,8 +8,8 @@ import ml_collections
 import optax
 
 from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
-from utils.networks import GCActor, GCValue, LogParam
-
+from utils.networks import GCActor, GCValue, LogParam, MLP
+#from utils.transformer_mlp import TransformerMLP
 
 class GCSACBCAgent(flax.struct.PyTreeNode):
     """Goal-conditioned soft actor-critic + behavioral cloning (GCSAC+BC) agent."""
@@ -175,6 +175,7 @@ class GCSACBCAgent(flax.struct.PyTreeNode):
         seed,
         example_batch,
         config,
+        mlp_class,
     ):
         """Create a new agent.
 
@@ -197,6 +198,7 @@ class GCSACBCAgent(flax.struct.PyTreeNode):
         # Define networks.
         critic_def = GCValue(
             hidden_dims=config['value_hidden_dims'],
+            mlp_class=mlp_class,
             layer_norm=config['layer_norm'],
             num_ensembles=config['num_qs'],
         )
@@ -204,6 +206,7 @@ class GCSACBCAgent(flax.struct.PyTreeNode):
         actor_def = GCActor(
             hidden_dims=config['actor_hidden_dims'],
             action_dim=action_dim,
+            mlp_class= mlp_class,
             layer_norm=config['layer_norm'],
             tanh_squash=config['tanh_squash'],
             state_dependent_std=config['state_dependent_std'],
@@ -243,6 +246,8 @@ def get_config():
             batch_size=1024,  # Batch size.
             actor_hidden_dims=(1024, 1024, 1024, 1024),  # Actor network hidden dimensions.
             value_hidden_dims=(1024, 1024, 1024, 1024),  # Value network hidden dimensions.
+            mlp_class='MLP',
+            tx_variant='',
             layer_norm=True,  # Whether to use layer normalization.
             discount=0.999,  # Discount factor.
             tau=0.005,  # Target network update rate.
@@ -269,3 +274,41 @@ def get_config():
         )
     )
     return config
+
+ # config = ml_collections.ConfigDict(
+    #     # small (2048, 16, 128, 4, 128)
+    #     # large (2048, 8, 256, 10, 1024)
+    #     dict(
+    #         # Agent hyperparameters.
+    #         agent_name='gcsacbc',  # Agent name.
+    #         lr=3e-4,  # Learning rate.
+    #         batch_size=256,  # Batch size. (smaller than MLP)
+    #         # actor_hidden_dims=(2048, 16, 128, 4, 128),  # Actor network hidden dimensions. (small)
+    #         # value_hidden_dims=(2048, 16, 128, 4, 128),  # Value network hidden dimensions. (small)
+    #         actor_hidden_dims=(2048, 8, 256, 10, 1024), # Actor network hidden dimensions. (large)
+    #         value_hidden_dims=(2048, 8, 256, 10, 1024), # Value network hidden dimensions. (large)
+    #         mlp_class=TransformerMLP,
+    #         layer_norm=True,  # Whether to use layer normalization.
+    #         discount=0.999,  # Discount factor.
+    #         tau=0.005,  # Target network update rate.
+    #         target_entropy=ml_collections.config_dict.placeholder(float),  # Target entropy (None for automatic tuning).
+    #         target_entropy_multiplier=0.5,  # Multiplier to dim(A) for target entropy.
+    #         tanh_squash=True,  # Whether to squash actions with tanh.
+    #         state_dependent_std=True,  # Whether to use state-dependent standard deviations for actor.
+    #         actor_fc_scale=0.01,  # Final layer initialization scale for actor.
+    #         num_qs=2,  # Number of Q ensembles.
+    #         q_agg='min',  # Aggregation function for Q values.
+    #         alpha=0.3,  # BC coefficient.
+    #         value_loss_type='bce',  # Value loss type ('squared' or 'bce').
+    #         # Dataset hyperparameters.
+    #         dataset_class='GCDataset',  # Dataset class name.
+    #         value_p_curgoal=0.2,  # Probability of using the current state as the value goal.
+    #         value_p_trajgoal=0.5,  # Probability of using a future state in the same trajectory as the value goal.
+    #         value_p_randomgoal=0.3,  # Probability of using a random state as the value goal.
+    #         value_geom_sample=False,  # Whether to use geometric sampling for future value goals.
+    #         actor_p_curgoal=0.0,  # Probability of using the current state as the actor goal.
+    #         actor_p_trajgoal=0.5,  # Probability of using a future state in the same trajectory as the actor goal.
+    #         actor_p_randomgoal=0.5,  # Probability of using a random state as the actor goal.
+    #         actor_geom_sample=True,  # Whether to use geometric sampling for future actor goals.
+    #         gc_negative=False,  # Whether to use '0 if s == g else -1' (True) or '1 if s == g else 0' (False) as reward.
+    #     )
