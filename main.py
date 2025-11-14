@@ -207,7 +207,7 @@ def main(_):
             )
             train_dataset = dataset_class(Dataset.create(**train_dataset), config)
             val_dataset = dataset_class(Dataset.create(**val_dataset), config)
-    stop_trace()
+
     train_logger.close()
     eval_logger.close()
 
